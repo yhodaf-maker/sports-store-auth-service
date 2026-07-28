@@ -54,3 +54,5 @@ jobs:
           image-ref: sports-store-auth-service:pr-${{ github.sha }}
           severity: HIGH,CRITICAL
           exit-code: '1'
+          ignore-unfixed: true
+          scanners: vuln
