@@ -21,6 +21,6 @@ USER nonroot
 EXPOSE 8001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["-m", "urllib.request", "http://localhost:8001/health"]
+  CMD ["/usr/bin/python3.11", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=4).read()"]
 
 CMD ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

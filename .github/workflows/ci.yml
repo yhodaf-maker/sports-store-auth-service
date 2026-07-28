@@ -24,7 +24,7 @@ jobs:
 
       - run: pytest
 
-  security:
+  gitleaks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,11 +42,20 @@ jobs:
         run: |
           gitleaks detect --source . --verbose
 
+  checkov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: bridgecrewio/checkov-action@v12
         with:
           directory: .
           framework: dockerfile
 
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - run: docker build --tag sports-store-auth-service:pr-${{ github.sha }} .
 
       - uses: aquasecurity/trivy-action@v0.36.0
