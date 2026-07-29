@@ -23,3 +23,7 @@ uvicorn main:app --reload --port 8001
 ```bash
 pytest tests/ -v
 ```
+
+## PR Diff Review Runner
+
+The offline, provider-independent review pipeline is documented in [`review_runner/README.md`](review_runner/README.md). It accepts a supplied unified PR patch and does not make external API calls.
