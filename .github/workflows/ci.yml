@@ -1,0 +1,113 @@
+name: PR Quality and Security
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-validation-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Ruff, pytest, and dependency validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.2.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt ruff==0.16.0
+
+      - name: Validate installed dependencies
+        run: python -m pip check
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        run: pytest
+
+  secrets:
+    name: Gitleaks history and file scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install verified Gitleaks CLI
+        env:
+          GITLEAKS_VERSION: 8.28.0
+          GITLEAKS_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          archive="${RUNNER_TEMP}/gitleaks.tar.gz"
+          curl --fail --silent --show-error --location \
+            --output "${archive}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          printf '%s  %s\n' "${GITLEAKS_SHA256}" "${archive}" | sha256sum --check
+          tar --extract --gzip --file "${archive}" --directory "${RUNNER_TEMP}" gitleaks
+          mkdir --parents "${RUNNER_TEMP}/bin"
+          install "${RUNNER_TEMP}/gitleaks" "${RUNNER_TEMP}/bin/gitleaks"
+          printf '%s\n' "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+
+      - name: Scan pull request branch history
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: gitleaks git --redact --verbose --log-opts="${BASE_SHA}..${HEAD_SHA}" .
+
+      - name: Scan current repository files
+        run: gitleaks dir --redact --verbose .
+
+  dockerfile:
+    name: Checkov Dockerfile validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
+
+      - name: Scan Dockerfile
+        uses: bridgecrewio/checkov-action@7b972723c44fb3d256283fac96fae5d7c1894bb7 # v12.3107.0
+        with:
+          file: Dockerfile
+          framework: dockerfile
+          output_format: cli
+          soft_fail: false
+
+  image:
+    name: Trivy image vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
+
+      - name: Build local image
+        run: docker build --tag auth-service:ci .
+
+      - name: Scan patched high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: auth-service:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          scanners: vuln

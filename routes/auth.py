@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Annotated
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -49,7 +50,7 @@ async def login(payload: LoginRequest):
 
 
 @router.get("/me", response_model=UserPublic)
-async def me(claims: dict = Depends(get_current_user)):
+async def me(claims: Annotated[dict, Depends(get_current_user)]):
     try:
         user = await users_collection.find_one({"_id": ObjectId(claims["sub"])})
     except InvalidId:

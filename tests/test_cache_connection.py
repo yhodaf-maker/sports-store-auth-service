@@ -1,6 +1,7 @@
-import unittest
 import sys
-from unittest.mock import patch, MagicMock
+import unittest
+from unittest.mock import MagicMock, patch
+
 
 class TestCacheConnection(unittest.TestCase):
     def setUp(self):

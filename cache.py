@@ -1,4 +1,5 @@
 import os
+
 import redis
 from redis.sentinel import Sentinel
 
@@ -41,7 +42,7 @@ if redis_client is None:
     # Standalone fallback for local compose development
     redis_client = redis.Redis(
         host=os.environ.get("REDIS_HOST", "localhost"),
-        port=int(os.environ.get("REDIS_PORT", 6379)),
+        port=int(os.environ.get("REDIS_PORT", "6379")),
         password=REDIS_PASSWORD,
         socket_timeout=REDIS_SOCKET_TIMEOUT
     )
