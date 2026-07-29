@@ -105,7 +105,7 @@ def _split_hunk(
         if current and estimator.estimate(candidate) > budget:
             parts.append(_Fragment(path, "\n".join([prefix, *current]), hunk.header))
             current = []
-            candidate = "\n".join([prefix, line.text])
+            candidate = f"{prefix}\n{line.text}"
         if estimator.estimate(candidate) > budget:
             skipped.append(SkippedItem(path, "chunk_input_limit", "individual diff line exceeds chunk budget", hunk.header))
             continue

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from typing import ClassVar
 
 from .models import Finding, ProviderResult, ReviewChunk
 
 
 class MockReviewProvider:
-    SCENARIOS = {
+    SCENARIOS: ClassVar[set[str]] = {
         "findings", "no_findings", "multiple", "duplicates", "empty",
         "error", "invalid", "delayed",
     }

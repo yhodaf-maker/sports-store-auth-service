@@ -48,9 +48,12 @@ def _filter_reason(file: DiffFile, config: RunnerConfig) -> str | None:
     suffixes = PurePosixPath(file.path.lower()).suffixes
     effective_suffix = "".join(suffixes[-2:]) if suffixes[-1:] == [".map"] else (suffixes[-1] if suffixes else "")
     basename = PurePosixPath(file.path).name.lower()
-    if config.included_file_types and effective_suffix not in config.included_file_types:
-        if basename not in {"dockerfile", "makefile", "jenkinsfile"}:
-            return "unsupported_file_type"
+    if (
+        config.included_file_types
+        and effective_suffix not in config.included_file_types
+        and basename not in {"dockerfile", "makefile", "jenkinsfile"}
+    ):
+        return "unsupported_file_type"
     return None
 
 

@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 
 from .models import ChangeType, DiffFile, DiffHunk, DiffLine, SkippedItem
 
-
 HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -86,7 +85,7 @@ def _parse_file(lines: list[str]) -> DiffFile:
             added_file = True
         elif line.startswith("deleted file mode ") or line == "+++ /dev/null":
             deleted_file = True
-        elif line.startswith("Binary files ") or line.startswith("GIT binary patch"):
+        elif line.startswith(("Binary files ", "GIT binary patch")):
             binary = True
         index += 1
     if rename_to:

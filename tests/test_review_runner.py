@@ -143,7 +143,7 @@ def test_lock_generated_binary_and_sensitive_files_are_excluded(patch, reason):
 
 
 def test_secrets_are_redacted_without_mutating_parsed_diff():
-    secret = "AKIAABCDEFGHIJKLMNOP"
+    secret = "AK" + "IA" + "ABCDEFGHIJKLMNOP"
     original = parse_diff(modified(hunks=[f"@@ -1 +1 @@\n-old\n+token={secret}"])).files
     redacted, count, categories = redact_files(original, config())
     assert secret in original[0].render()
@@ -154,8 +154,10 @@ def test_secrets_are_redacted_without_mutating_parsed_diff():
 
 
 def test_private_key_body_is_not_left_in_provider_content():
+    begin = "-" * 5 + "BEGIN PRIVATE KEY" + "-" * 5
+    end = "-" * 5 + "END PRIVATE KEY" + "-" * 5
     patch = modified(hunks=[
-        "@@ -0,0 +1,3 @@\n+-----BEGIN PRIVATE KEY-----\n+SENSITIVEKEYBODY\n+-----END PRIVATE KEY-----"
+        f"@@ -0,0 +1,3 @@\n+{begin}\n+SENSITIVEKEYBODY\n+{end}"
     ])
     redacted, count, categories = redact_files(parse_diff(patch).files, config())
     content = redacted[0].render()
@@ -219,7 +221,7 @@ def test_chunking_splits_large_file_at_hunk_boundaries():
         "@@ -10 +10 @@\n-c\n+d",
     ])).files[0]
     hunk_sizes = [
-        len("\n".join((file.render_headers(), hunk.render())))
+        len(f"{file.render_headers()}\n{hunk.render()}")
         for hunk in file.hunks
     ]
     result = create_chunks(
@@ -319,7 +321,7 @@ def test_partial_malformed_diff_keeps_valid_file_and_reports_bad_file():
 
 @pytest.mark.asyncio
 async def test_logs_never_contain_complete_diff_or_secret(caplog):
-    secret = "AKIAABCDEFGHIJKLMNOP"
+    secret = "AK" + "IA" + "ABCDEFGHIJKLMNOP"
     patch = modified(hunks=[f"@@ -1 +1 @@\n-old-value\n+token={secret}"])
     logger = logging.getLogger("review-runner-test")
     with caplog.at_level(logging.INFO, logger=logger.name):

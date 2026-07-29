@@ -72,7 +72,8 @@ class ReviewRunner:
             try:
                 provider_result = await self.provider.review(chunk)
                 results.append(ChunkResult(chunk.chunk_id, provider_result))
-            except Exception as exc:  # Provider boundaries must not abort other chunks.
+            # Provider boundaries must not abort processing of unrelated chunks.
+            except Exception as exc:  # noqa: BLE001
                 category = type(exc).__name__
                 self.logger.error("provider failure chunk_id=%s category=%s", chunk.chunk_id, category)
                 results.append(ChunkResult(chunk.chunk_id, error_category=category))

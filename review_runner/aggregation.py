@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import re
 
-from .models import ChunkResult, Finding, InclusionStatus, ReviewChunk, ReviewResult, SkippedItem
+from .models import (
+    ChunkResult,
+    Finding,
+    InclusionStatus,
+    ReviewChunk,
+    ReviewResult,
+    SkippedItem,
+)
 
 
 def aggregate_results(
