@@ -19,6 +19,38 @@ class InclusionStatus(str, Enum):
     SKIPPED = "skipped"
 
 
+class Severity(str, Enum):
+    INFO = "INFO"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class FindingCategory(str, Enum):
+    STYLE = "STYLE"
+    PERFORMANCE = "PERFORMANCE"
+    SECURITY = "SECURITY"
+    BUG = "BUG"
+    RELIABILITY = "RELIABILITY"
+    MAINTAINABILITY = "MAINTAINABILITY"
+
+
+class ProviderErrorCategory(str, Enum):
+    CONFIGURATION_ERROR = "configuration_error"
+    AUTHENTICATION_ERROR = "authentication_error"
+    MODEL_UNAVAILABLE = "model_unavailable"
+    UNSUPPORTED_CAPABILITY = "unsupported_capability"
+    PRIVACY_REQUIREMENT_UNAVAILABLE = "privacy_requirement_unavailable"
+    RATE_LIMITED = "rate_limited"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    NETWORK_TIMEOUT = "network_timeout"
+    PAYLOAD_TOO_LARGE = "payload_too_large"
+    INVALID_STRUCTURED_RESPONSE = "invalid_structured_response"
+    QUOTA_EXHAUSTED = "quota_exhausted"
+    UNEXPECTED_PROVIDER_ERROR = "unexpected_provider_error"
+
+
 @dataclass
 class DiffLine:
     kind: str
@@ -75,6 +107,7 @@ class ReviewChunk:
     files: list[str]
     estimated_tokens: int
     hunk_headers: list[str] = field(default_factory=list)
+    changed_lines: dict[str, list[int]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -86,6 +119,9 @@ class Finding:
     category: str
     line: int | None = None
     hunk: str | None = None
+    suggested_remediation: str = ""
+    confidence: float = 1.0
+    chunk_id: str | None = None
 
 
 @dataclass
@@ -93,6 +129,26 @@ class ProviderResult:
     findings: list[Finding] = field(default_factory=list)
     valid: bool = True
     error_category: str | None = None
+    summary: str = ""
+    overall_risk: str = "INFO"
+    safe_reason: str | None = None
+    retry_attempted: bool = False
+    retry_count: int = 0
+    skipped: bool = False
+    partial: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_ms: int = 0
+    model: str | None = None
+
+
+@dataclass(frozen=True)
+class ReviewContext:
+    commit_sha: str | None
+    model_context_tokens: int
+    max_chunk_input_tokens: int
+    reserved_output_tokens: int
+    max_execution_seconds: float
 
 
 @dataclass
@@ -112,6 +168,9 @@ class ReviewResult:
     file_statuses: dict[str, InclusionStatus]
     redaction_count: int
     estimated_tokens: int
+    failure_details: dict[str, dict[str, Any]] = field(default_factory=dict)
+    partial: bool = False
+    ai_review_skipped: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

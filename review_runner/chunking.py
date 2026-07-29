@@ -19,6 +19,7 @@ class _Fragment:
     path: str
     text: str
     hunk_header: str | None
+    changed_lines: list[int]
 
 
 def create_chunks(
@@ -29,12 +30,14 @@ def create_chunks(
     skipped: list[SkippedItem] = []
     complete = "\n".join(file.render() for file in files)
     if complete and estimator.estimate(complete) <= budget:
-        fragments = [_Fragment(file.path, file.render(), None) for file in files]
+        fragments = [
+            _Fragment(file.path, file.render(), None, _changed_lines(file.hunks)) for file in files
+        ]
     else:
         for file in files:
             file_text = file.render()
             if estimator.estimate(file_text) <= budget:
-                fragments.append(_Fragment(file.path, file_text, None))
+                fragments.append(_Fragment(file.path, file_text, None, _changed_lines(file.hunks)))
                 continue
             fragments.extend(_split_file(file, budget, estimator, skipped))
 
@@ -78,7 +81,7 @@ def _split_file(
     for hunk in file.hunks:
         text = "\n".join(part for part in (headers, hunk.render()) if part)
         if estimator.estimate(text) <= budget:
-            fragments.append(_Fragment(file.path, text, hunk.header))
+            fragments.append(_Fragment(file.path, text, hunk.header, _changed_lines([hunk])))
             continue
         fragments.extend(_split_hunk(file.path, headers, hunk, budget, estimator, skipped))
     if not file.hunks:
@@ -99,19 +102,29 @@ def _split_hunk(
         skipped.append(SkippedItem(path, "chunk_input_limit", "diff metadata exceeds chunk budget", hunk.header))
         return []
     parts: list[_Fragment] = []
-    current: list[str] = []
+    current: list[object] = []
     for line in hunk.lines:
-        candidate = "\n".join([prefix, *current, line.text])
+        candidate = "\n".join([prefix, *(item.text for item in current), line.text])
         if current and estimator.estimate(candidate) > budget:
-            parts.append(_Fragment(path, "\n".join([prefix, *current]), hunk.header))
+            parts.append(_Fragment(
+                path,
+                "\n".join([prefix, *(item.text for item in current)]),
+                hunk.header,
+                [item.new_line for item in current if item.kind == "add" and item.new_line is not None],
+            ))
             current = []
             candidate = f"{prefix}\n{line.text}"
         if estimator.estimate(candidate) > budget:
             skipped.append(SkippedItem(path, "chunk_input_limit", "individual diff line exceeds chunk budget", hunk.header))
             continue
-        current.append(line.text)
+        current.append(line)
     if current:
-        parts.append(_Fragment(path, "\n".join([prefix, *current]), hunk.header))
+        parts.append(_Fragment(
+            path,
+            "\n".join([prefix, *(item.text for item in current)]),
+            hunk.header,
+            [item.new_line for item in current if item.kind == "add" and item.new_line is not None],
+        ))
     return parts
 
 
@@ -129,5 +142,16 @@ def _append_chunk(
         files=files,
         estimated_tokens=tokens,
         hunk_headers=[fragment.hunk_header for fragment in fragments if fragment.hunk_header],
+        changed_lines={
+            path: sorted({line for fragment in fragments if fragment.path == path for line in fragment.changed_lines})
+            for path in files
+        },
     ))
     return total + tokens
+
+
+def _changed_lines(hunks: list[DiffHunk]) -> list[int]:
+    return sorted({
+        line.new_line for hunk in hunks for line in hunk.lines
+        if line.kind == "add" and line.new_line is not None
+    })

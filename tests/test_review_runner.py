@@ -331,3 +331,31 @@ async def test_logs_never_contain_complete_diff_or_secret(caplog):
     assert secret not in messages
     assert "old-value" not in messages
     assert "content redacted count=1" in messages
+
+
+@pytest.mark.asyncio
+async def test_partial_provider_failure_continues_remaining_chunks():
+    class PartialProvider:
+        def __init__(self):
+            self.calls = 0
+
+        async def review(self, chunk):
+            self.calls += 1
+            if self.calls == 1:
+                return ProviderResult(valid=False, error_category="provider_unavailable")
+            return ProviderResult()
+
+    patch = modified("a.py") + "\n" + modified("b.py")
+    files = parse_diff(patch).files
+    budget = max(len(item.render()) for item in files)
+    provider = PartialProvider()
+    result = await ReviewRunner(
+        provider,
+        config(max_chunk_input_tokens=budget),
+        CharacterEstimator(),
+    ).run(patch, commit_sha="a" * 40)
+    assert provider.calls == 2
+    assert len(result.processed_chunks) == 1
+    assert len(result.failed_chunks) == 1
+    assert result.partial
+    assert not result.ai_review_skipped

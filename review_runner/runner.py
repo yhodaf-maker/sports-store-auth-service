@@ -9,7 +9,7 @@ from .config import RunnerConfig
 from .diff_parser import parse_diff
 from .filtering import filter_files
 from .logging_utils import get_logger
-from .models import ChunkResult, InclusionStatus, ReviewResult
+from .models import ChunkResult, InclusionStatus, ReviewContext, ReviewResult
 from .provider import ReviewProvider
 from .redaction import redact_files
 from .tokens import ConservativeTokenEstimator, TokenEstimator
@@ -29,7 +29,7 @@ class ReviewRunner:
         self.token_estimator = token_estimator or ConservativeTokenEstimator()
         self.logger = logger or get_logger(self.config.logging_level)
 
-    async def run(self, diff_text: str) -> ReviewResult:
+    async def run(self, diff_text: str, commit_sha: str | None = None) -> ReviewResult:
         started = time.monotonic()
         parsed = parse_diff(diff_text)
         self.logger.info("diff parsed files=%d parse_skips=%d", len(parsed.files), len(parsed.skipped))
@@ -68,7 +68,31 @@ class ReviewRunner:
         )
 
         results: list[ChunkResult] = []
-        for chunk in chunking.chunks:
+        preparation_blocked = False
+        prepare = getattr(self.provider, "prepare", None)
+        if prepare and chunking.chunks:
+            context = ReviewContext(
+                commit_sha=commit_sha,
+                model_context_tokens=self.config.model_context_tokens,
+                max_chunk_input_tokens=self.config.max_chunk_input_tokens,
+                reserved_output_tokens=self.config.reserved_output_tokens,
+                max_execution_seconds=self.config.max_execution_seconds,
+            )
+            try:
+                preparation_failure = await prepare(context)
+            except Exception as exc:  # noqa: BLE001
+                category = type(exc).__name__
+                self.logger.error("provider preparation failure category=%s", category)
+                preparation_failure = None
+                results.extend(ChunkResult(chunk.chunk_id, error_category=category) for chunk in chunking.chunks)
+                preparation_blocked = True
+            if preparation_failure is not None:
+                results.extend(
+                    ChunkResult(chunk.chunk_id, preparation_failure) for chunk in chunking.chunks
+                )
+                preparation_blocked = True
+
+        for chunk in (() if preparation_blocked else chunking.chunks):
             try:
                 provider_result = await self.provider.review(chunk)
                 results.append(ChunkResult(chunk.chunk_id, provider_result))

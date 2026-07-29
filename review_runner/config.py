@@ -84,6 +84,7 @@ class RunnerConfig:
     oversized_file_behavior: str = "truncate"
     redaction_rules: tuple[tuple[str, str], ...] = DEFAULT_REDACTIONS
     logging_level: str = "INFO"
+    max_execution_seconds: float = 300.0
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> RunnerConfig:
@@ -135,6 +136,12 @@ class RunnerConfig:
             raise ValueError("oversized_file_behavior must be 'skip' or 'truncate'")
         if self.logging_level.upper() not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
             raise ValueError("logging_level is invalid")
+        if (
+            not isinstance(self.max_execution_seconds, (int, float))
+            or isinstance(self.max_execution_seconds, bool)
+            or self.max_execution_seconds <= 0
+        ):
+            raise ValueError("max_execution_seconds has an invalid value")
         for name, pattern in self.redaction_rules:
             if not name or not pattern:
                 raise ValueError("redaction rules require a name and pattern")
@@ -158,6 +165,11 @@ def _parse_environment_value(raw: str, default: Any) -> Any:
             return int(raw)
         except ValueError as exc:
             raise ValueError(f"invalid integer environment value: {raw!r}") from exc
+    if isinstance(default, float):
+        try:
+            return float(raw)
+        except ValueError as exc:
+            raise ValueError("invalid floating-point environment value") from exc
     if isinstance(default, tuple):
         try:
             parsed = json.loads(raw)

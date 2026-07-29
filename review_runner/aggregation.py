@@ -22,6 +22,7 @@ def aggregate_results(
     findings: dict[tuple[object, ...], Finding] = {}
     processed: list[str] = []
     failed: dict[str, str] = {}
+    failure_details: dict[str, dict[str, object]] = {}
     for chunk_result in chunk_results:
         if chunk_result.error_category:
             failed[chunk_result.chunk_id] = chunk_result.error_category
@@ -29,6 +30,15 @@ def aggregate_results(
         result = chunk_result.result
         if result is None or not result.valid:
             failed[chunk_result.chunk_id] = result.error_category if result else "empty_response"
+            if result:
+                failure_details[chunk_result.chunk_id] = {
+                    "failure_category": result.error_category,
+                    "reason": result.safe_reason,
+                    "retry_attempted": result.retry_attempted,
+                    "retry_count": result.retry_count,
+                    "skipped": result.skipped,
+                    "partial": result.partial,
+                }
             continue
         processed.append(chunk_result.chunk_id)
         for finding in result.findings:
@@ -51,6 +61,9 @@ def aggregate_results(
         file_statuses=dict(sorted(file_statuses.items())),
         redaction_count=redaction_count,
         estimated_tokens=sum(chunk.estimated_tokens for chunk in chunks),
+        failure_details=dict(sorted(failure_details.items())),
+        partial=bool(processed and failed),
+        ai_review_skipped=bool(chunks and not processed),
     )
 
 
