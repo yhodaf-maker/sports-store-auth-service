@@ -171,6 +171,9 @@ class ReviewResult:
     failure_details: dict[str, dict[str, Any]] = field(default_factory=dict)
     partial: bool = False
     ai_review_skipped: bool = False
+    summary: str = ""
+    overall_risk: str = "INFO"
+    provider_metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

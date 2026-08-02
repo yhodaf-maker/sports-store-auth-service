@@ -126,22 +126,93 @@ For an optional manual test, export `OPENROUTER_API_KEY` from a secret store, co
 
 Free OpenRouter models are limited, rate-limited, mutable, and non-SLA-backed. Availability, endpoint capabilities, and privacy-compatible routes may change. Such changes produce a skipped advisory review rather than switching models or failing deterministic CI.
 
-## Post-CI Integration
+## GitHub Actions Integration
 
-This task intentionally does not add a GitHub Actions workflow. The later review workflow must run through `workflow_run` only after the existing workflow named `PR Quality and Security` completes successfully. It must resolve the triggering run's Pull Request and head SHA, retrieve only that PR's unified diff, and invoke this CLI.
+The integration has three trust boundaries:
 
-The workflows must not duplicate responsibilities:
+1. `.github/workflows/ci.yml` runs every deterministic Pull Request check: branch naming, Ruff, pytest, dependency validation, Gitleaks, Checkov, the container build, and Trivy.
+2. `.github/workflows/ai-review-after-ci.yml` runs from the default branch after `PR Quality and Security` completes. Its job exists only when the completed run is a successful Pull Request run with resolved PR metadata.
+3. `.github/workflows/reusable-ai-review.yml` checks out the exact base SHA, installs dependencies from that trusted revision, retrieves the PR diff through the GitHub API, and invokes `python -m review_runner.github_review`.
 
-| Existing `PR Quality and Security` workflow | Future post-CI review workflow |
-| --- | --- |
-| Ruff | Resolve triggering PR metadata |
-| pytest, including runner tests | Retrieve the PR unified diff |
-| Installed dependency validation | Run this review pipeline |
-| Gitleaks history and directory scans | Invoke the future review provider |
-| Checkov Dockerfile validation | Publish the future review result |
-| Docker image build and Trivy scan | No quality, security, test, or image checks |
+The `workflow_run` intermediary is intentional. A reusable workflow called directly by a `pull_request` workflow can be changed by a same-repository PR before receiving a repository secret. The completion event instead executes trusted default-branch workflow logic and passes fork content only as API-retrieved data. The review never checks out or executes the PR head.
 
-The future workflow should use `workflow_run.workflows: ["PR Quality and Security"]`, `types: [completed]`, and require `github.event.workflow_run.conclusion == 'success'`. It must not rerun Ruff, pytest, dependency checks, Gitleaks, Checkov, Docker builds, or Trivy.
+The orchestrator requires the complete deterministic workflow conclusion to equal `success` and exactly one associated PR. Before provider preparation, the trusted driver resolves that run ID through the Actions API, binds it to the same PR, verifies every explicitly configured required job concluded `success`, and requires the head copy of `ci.yml` to be byte-for-byte identical to the trusted base copy. A failed, canceled, skipped, duplicated, missing, or PR-modified required check therefore cannot consume an OpenRouter request. A PR that intentionally changes `ci.yml` is conservatively skipped until that workflow change is merged and becomes trusted. No waiting comment is created before CI finishes. Deterministic CI remains authoritative; AI severity never changes a job exit status.
+
+### Inputs And Secret
+
+The trusted caller passes the PR number, `owner/repository`, base SHA, head SHA, reviewed SHA, deterministic workflow run ID, and a JSON list naming every required deterministic job. It may pass trusted runner configuration as a JSON object. The driver validates these values against current GitHub API metadata before retrieving the diff or calling OpenRouter. Branch environment variables and PR-controlled files are not authoritative metadata or configuration.
+
+Configure one Actions secret:
+
+```text
+OPENROUTER_API_KEY
+```
+
+The caller passes that secret explicitly as `openrouter_api_key`; it does not use `secrets: inherit`. `GITHUB_TOKEN` is supplied automatically. No AWS, deployment, database, registry, environment, or organization-wide secrets are passed.
+
+Required permissions are:
+
+```yaml
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+```
+
+`actions: read` validates the originating run and every required job conclusion before provider use. `contents: read` supports trusted base checkout, PR metadata/diff reads, and comparison of the head CI definition with the trusted base definition. `pull-requests: write` supports locating, creating, and updating the persistent PR issue comment. No cloud identity, repository write, package, release, deployment, Actions-management, or security-event write permission is used.
+
+### Fork Policy
+
+Fork PRs use the same data-only flow. Trusted default-branch code retrieves the fork diff through the GitHub API and sends only DEP-314-filtered, redacted chunks to DEP-315. The workflow does not check out the fork, install fork dependencies, read fork configuration, or execute fork commands. If API metadata or diff retrieval cannot be guaranteed, the review is skipped with a non-sensitive explanation and remains fail-open.
+
+### Concurrency And Stale Runs
+
+Reusable-workflow concurrency is scoped to `ai-review-<repository>-<pr-number>` with `cancel-in-progress: true`. A push to one PR cancels only that PR's older review. Immediately before final publication, the driver reads the PR again and requires its current head to equal the reviewed SHA. Stale findings are discarded without updating the comment.
+
+### Persistent Comment
+
+One comment is identified by the exact application marker:
+
+```html
+<!-- sports-store-ai-review:v1 -->
+```
+
+Only marker-bearing comments authored by `github-actions[bot]` qualify. The lowest comment ID is canonical when duplicates exist. The client updates it, logs a sanitized duplicate count, and does not create another. A delete-between-lookup-and-update race causes one re-list before creation. Rate limits, timeouts, and transient API failures use bounded retries.
+
+The comment progresses from `In Progress` to `Completed`, `Partial`, `Skipped`, or `Failed Safely`. It includes the reviewed SHA, validated summary and findings, risk, location, severity, category, remediation, confidence, coverage, skipped-reason counts, and limited operational totals. Model-controlled fields are HTML/Markdown escaped, marker injection and unsafe URL schemes are neutralized, findings are severity-prioritized, and output is size-limited. Raw JSON, diffs, prompts, responses, stack traces, and provider diagnostics are never rendered.
+
+Provider, validation, privacy, quota, timeout, and comment failures are advisory. The driver emits normalized `review_status`, `comment_status`, and `reviewed_commit_sha` outputs and exits successfully. `HIGH` and `CRITICAL` findings do not block the PR.
+
+### Disable Safely
+
+Disable reviews by disabling `.github/workflows/ai-review-after-ci.yml` in Actions or removing its `workflow_run` trigger on the default branch. Do not weaken the success condition, add `always()`, move the OpenRouter secret into `ci.yml`, or use `secrets: inherit`.
+
+### Testing And Troubleshooting
+
+Run the offline suite without OpenRouter traffic:
+
+```bash
+ruff check .
+pytest
+python -m pip check
+```
+
+Workflow contract tests verify the success-only gate, trusted checkout, permissions, explicit secret, data-only execution, and PR-scoped concurrency. Mocked integration tests cover findings, no findings, provider failures, stale results, fork review/skip behavior, persistent updates, duplicate markers, comment deletion races, and API retries.
+
+For representative repository validation, open a dummy PR and verify:
+
+1. Passing all jobs starts the AI workflow and creates one comment for the exact head SHA.
+2. A second push cancels the older review and updates the same comment.
+3. Failing Ruff, pytest, Gitleaks, Checkov, or Trivy leaves the AI workflow unstarted and does not consume provider quota.
+4. Canceling or deliberately skipping a required job also leaves the AI workflow unstarted.
+5. A fork PR is reviewed through API data only, or displays a safe skip if the API cannot provide the diff.
+6. Temporarily selecting a mock/unavailable provider in a test repository produces an advisory state without changing deterministic CI conclusions.
+
+If no review starts after passing CI, verify the completed workflow name is exactly `PR Quality and Security`, the event is `pull_request`, PR metadata exists on the completion payload, and the default branch contains both AI workflow files. If comments fail, verify the repository permits Actions to create PR comments and that workflow permissions are not restricted below `pull-requests: write`. If the provider is skipped, inspect only the sanitized failure category in logs and verify model capability/privacy requirements and quota.
+
+### Repository Rollout
+
+Validate this repository first. For another application repository, copy the reusable workflow and trusted completion orchestrator from the validated default-branch revision, keep repository-specific deterministic checks in its main PR CI workflow, update the orchestrator's workflow name, configure only `OPENROUTER_API_KEY`, and retain the permissions, marker, concurrency, trusted base checkout, and success-only condition. Repository-specific review limits must be passed through the trusted `reviewer_config_json` input rather than read from the PR. Do not deploy to all repositories until one dummy-PR validation completes successfully.
 
 ## Limitations
 

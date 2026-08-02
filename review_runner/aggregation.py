@@ -18,11 +18,14 @@ def aggregate_results(
     skipped: list[SkippedItem],
     file_statuses: dict[str, InclusionStatus],
     redaction_count: int,
+    provider_metrics: dict[str, object] | None = None,
 ) -> ReviewResult:
     findings: dict[tuple[object, ...], Finding] = {}
     processed: list[str] = []
     failed: dict[str, str] = {}
     failure_details: dict[str, dict[str, object]] = {}
+    summaries: list[str] = []
+    risks: list[str] = []
     for chunk_result in chunk_results:
         if chunk_result.error_category:
             failed[chunk_result.chunk_id] = chunk_result.error_category
@@ -41,6 +44,9 @@ def aggregate_results(
                 }
             continue
         processed.append(chunk_result.chunk_id)
+        if result.summary and result.summary not in summaries:
+            summaries.append(result.summary)
+        risks.append(result.overall_risk)
         for finding in result.findings:
             findings.setdefault(_dedupe_key(finding), finding)
 
@@ -64,6 +70,9 @@ def aggregate_results(
         failure_details=dict(sorted(failure_details.items())),
         partial=bool(processed and failed),
         ai_review_skipped=bool(chunks and not processed),
+        summary=" ".join(summaries),
+        overall_risk=_highest_risk(risks),
+        provider_metrics=provider_metrics or {},
     )
 
 
@@ -80,3 +89,8 @@ def _dedupe_key(finding: Finding) -> tuple[object, ...]:
 
 def _normalize(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip().casefold()
+
+
+def _highest_risk(risks: list[str]) -> str:
+    order = {"INFO": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+    return max(risks, key=lambda risk: order.get(risk, 0), default="INFO")

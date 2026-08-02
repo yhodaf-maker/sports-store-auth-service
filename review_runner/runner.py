@@ -102,8 +102,10 @@ class ReviewRunner:
                 self.logger.error("provider failure chunk_id=%s category=%s", chunk.chunk_id, category)
                 results.append(ChunkResult(chunk.chunk_id, error_category=category))
 
+        metrics = getattr(self.provider, "metrics", None)
         result = aggregate_results(
-            chunking.chunks, results, skipped, statuses, redaction_count
+            chunking.chunks, results, skipped, statuses, redaction_count,
+            metrics if isinstance(metrics, dict) else None,
         )
         self.logger.info(
             "review complete processed=%d failed=%d duration_ms=%d",

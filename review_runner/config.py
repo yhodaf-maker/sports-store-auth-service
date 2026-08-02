@@ -96,6 +96,11 @@ class RunnerConfig:
                 raise ValueError("configuration file must contain a JSON object")
             values.update(loaded)
 
+        return cls.from_mapping(values)
+
+    @classmethod
+    def from_mapping(cls, supplied: dict[str, Any] | None = None) -> RunnerConfig:
+        values = dict(supplied or {})
         known = {item.name: item for item in fields(cls)}
         unknown = set(values) - set(known)
         if unknown:

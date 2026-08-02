@@ -52,6 +52,7 @@ class OpenRouterProvider:
         self._requests = 0
         self._input_tokens = 0
         self._output_tokens = 0
+        self._retries = 0
         self._prepared = False
         self._retry_after_seconds = 0.0
 
@@ -64,6 +65,17 @@ class OpenRouterProvider:
     async def aclose(self) -> None:
         if self._owns_client:
             await self._client.aclose()
+
+    @property
+    def metrics(self) -> dict[str, int | str]:
+        return {
+            "model": self.config.model,
+            "request_count": self._requests,
+            "input_tokens": self._input_tokens,
+            "output_tokens": self._output_tokens,
+            "retry_count": self._retries,
+            "duration_ms": int((time.monotonic() - self._started) * 1000) if self._started else 0,
+        }
 
     async def prepare(self, context: ReviewContext) -> ProviderResult | None:
         self._context = context
@@ -425,6 +437,7 @@ class OpenRouterProvider:
         return headers
 
     def _log_result(self, chunk: ReviewChunk, result: ProviderResult) -> None:
+        self._retries += result.retry_count
         self.logger.info(
             "provider result model=%s chunk_id=%s estimated_input_tokens=%d output_tokens=%d "
             "duration_ms=%d retries=%d validation=%s findings=%d failure_category=%s",
