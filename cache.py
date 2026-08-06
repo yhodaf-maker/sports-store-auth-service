@@ -29,7 +29,8 @@ if REDIS_SENTINELS:
         sentinel = Sentinel(
             sentinel_hosts, 
             socket_timeout=REDIS_SOCKET_TIMEOUT, 
-            password=REDIS_PASSWORD
+            password=REDIS_PASSWORD,
+            sentinel_kwargs={"password": REDIS_PASSWORD}
         )
         # Resolve the active master node dynamically
         redis_client = sentinel.master_for(
