@@ -1,11 +1,11 @@
 import logging
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator, metrics
 from pymongo.errors import PyMongoError
 from redis.exceptions import RedisError
 
+from cors_config import add_cors_middleware
 from database import users_collection
 from routes import auth
 
@@ -13,12 +13,7 @@ logger = logging.getLogger("auth-service")
 
 app = FastAPI(title="Sports Store — Auth Service")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+add_cors_middleware(app)
 
 app.include_router(auth.router, prefix="/api")
 
